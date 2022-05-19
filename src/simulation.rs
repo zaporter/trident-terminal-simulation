@@ -117,7 +117,7 @@ mod tests {
     fn conserve_momentum () {
         let mut sim = Simulation::default();
         sim.point_masses.push(PointMass::new_earth(None));
-        sim.point_masses.push(PointMass::new_moon_incline(None));
+        sim.point_masses.push(PointMass::new_moon(None));
 
         let simulation_jiffy_s = SimulationFloat::new(5_f32);
         let initial_momentum = sim.calculate_system_momentum();
@@ -137,7 +137,7 @@ mod tests {
         
         let mut sim = Simulation::default();
         sim.point_masses.push(PointMass::new_earth(None));
-        sim.point_masses.push(PointMass::new_moon_incline(None));
+        sim.point_masses.push(PointMass::new_moon(None));
 
         let simulation_jiffy_s = SimulationFloat::new(5_f32);
         let mut max_lunar_distance = SimulationFloat::new(0_f32);

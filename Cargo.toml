@@ -12,3 +12,10 @@ rug = "1.16.0"
 newtype_derive = "0.1.6"
 custom_derive = "0.1.7"
 stopwatch = "0.0.7"
+
+[dependencies.uuid]
+version = "1"
+features = [
+    "v4",
+    "js",
+]

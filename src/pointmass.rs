@@ -3,6 +3,8 @@ use kiss3d::window::Window;
 
 use std::fmt::Debug;
 use std::fmt;
+use uuid::Uuid;
+use std::collections::HashMap;
 use crate::*;
 
 #[derive( Clone)]
@@ -13,6 +15,7 @@ pub struct PointMass {
     pub scene_node : Option<SceneNode>,
     pub applies_gravity:bool,
     pub temp_K : SimulationFloat,
+    external_forces : HashMap<Uuid, Vec3>,
     past_positions : Vec<Vec3>,
     should_record_positions : bool,
 }
@@ -27,6 +30,7 @@ impl PointMass {
             temp_K : SimulationFloat::default(),
             past_positions : Vec::new(),
             should_record_positions : false,
+            external_forces : HashMap::new(),
         }
     }
     pub fn new_gravity(pos :Vec3, vel:Vec3, mass:SimulationFloat, scene_node : Option<SceneNode>) ->PointMass {
@@ -39,6 +43,7 @@ impl PointMass {
             temp_K : SimulationFloat::default(),
             past_positions : Vec::new(),
             should_record_positions : false,
+            external_forces : HashMap::new(),
         }
     }
     pub fn new_earth(window:Option<&mut Window>) -> PointMass{
@@ -62,28 +67,6 @@ impl PointMass {
 
     }
     pub fn new_moon(window: Option<&mut Window>) -> PointMass {
-        // https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
-        let moon_radius_km = 1738_f32;
-        let moon_mass_kg = SimulationFloat::new(0.07346e+24_f64);
-        let moon_perigee_m = SimulationFloat::new(0.3633e+9_f64);
-        let moon_perigee_speed_ms = SimulationFloat::new(1.082e+3_f64);
-        let mut moon_model : Option<SceneNode> = None;
-        if let Some(window) = window {
-            let mut moon_model_unwrapped = window.add_sphere(moon_radius_km);
-            moon_model_unwrapped.set_color(0.9,0.9,0.9);
-            moon_model = Some(moon_model_unwrapped);
-        }
-        let mut moon_point_mass = PointMass::new_gravity(
-                Vec3::new(0_f32,0_f32,0_f32), // pos
-                Vec3::new(0_f32,0_f32,0_f32), // vel
-                moon_mass_kg, // mass
-                moon_model, // model
-            );
-        moon_point_mass.pos.x = moon_perigee_m;
-        moon_point_mass.vel.y = moon_perigee_speed_ms;
-        moon_point_mass
-    }
-    pub fn new_moon_incline(window: Option<&mut Window>) -> PointMass {
         // https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
         let moon_radius_km = 1738_f32;
         let moon_mass_kg = SimulationFloat::new(0.07346e+24_f64);
@@ -157,13 +140,12 @@ impl PointMass {
             if distance == SimulationFloat::new(0_f32) {
                 continue;
             }
-            distance = distance * 2;
-            let product_of_masses = (gravity_point_mass.mass.clone() + self.mass.clone());
+            let product_of_masses = gravity_point_mass.mass.clone() * self.mass.clone();
 
             let pot_energy_magnitude = g_m3_kg_s.clone() * (product_of_masses / distance);
             energy += pot_energy_magnitude;
         }
-        energy //* SimulationFloat::new(-1_f32)
+        energy * SimulationFloat::new(-1_f32)
 
     }
     pub fn calculate_se_energy_j(&self, gravity_applying_masses : Vec<&PointMass>) -> SimulationFloat {
@@ -190,12 +172,23 @@ impl PointMass {
     pub fn calculate_heat_energy_j(&self) -> SimulationFloat {
         self.mass.clone() * self.temp_K.clone() // * SPECIFIC HEAT   
     }
+    pub fn add_external_force(&mut self, force_id : &Uuid, force : Vec3) {
+        self.external_forces.insert(*force_id, force);
+    }
+    pub fn remove_external_force(&mut self, force_id : &Uuid) -> Option<Vec3> {
+        self.external_forces.remove(force_id)
+
+    }
 }
 
 impl Simulatable for PointMass {
     fn tick(&mut self, dt_s : &SimulationFloat, gravity_applying_masses : &Vec<&PointMass>) {
         let mut force = Vec3::new(0_f32, 0_f32, 0_f32);
         force += self.calculate_gravitational_force(gravity_applying_masses);
+
+        for (_, external_force) in &self.external_forces {
+            force += external_force.clone();
+        }
 
         let acceleration = force / self.mass.clone();
 
@@ -210,11 +203,11 @@ impl Simulatable for PointMass {
         self.vel.clone() * self.mass.clone() 
     }
     fn calculate_total_energy_j(&self, gravity_applying_masses : Vec<&PointMass>) -> SimulationFloat {
-        // self.calculate_kinetic_energy_j() + 
-        //     self.calculate_potential_spring_energy_j() +
-        //     self.calculate_gravitational_potential_energy_j(gravity_applying_masses) + 
-        //     self.calculate_heat_energy_j()
-        self.calculate_se_energy_j(gravity_applying_masses)
+        self.calculate_kinetic_energy_j() + 
+            self.calculate_potential_spring_energy_j() +
+            self.calculate_gravitational_potential_energy_j(gravity_applying_masses) + 
+            self.calculate_heat_energy_j()
+        //self.calculate_se_energy_j(gravity_applying_masses)
     }
 
     fn update_scene_node_position(&mut self){
@@ -346,8 +339,29 @@ mod tests{
             );
         let potential = mass1.calculate_gravitational_potential_energy_j(vec![ &mass2]);
         dbg!(potential.clone());
-        assert!(potential > SimulationFloat::new(5.005e-10_f32));
-        assert!(potential < SimulationFloat::new(5.006e-10_f32));
+        assert!(potential < SimulationFloat::new(-5.005e-10_f32));
+        assert!(potential > SimulationFloat::new(-5.006e-10_f32));
+    }
+    #[test]
+    fn calc_potential_energy_different_orientation(){
+        // 5 kilos at 1 1 0 
+        let mass1 = PointMass::new_gravity(
+                Vec3::new(1_f32,1_f32,0_f32), // pos (at earth surface)
+                Vec3::new(0_f32,1_f32,0_f32), // vel
+                SimulationFloat::new(5_f64), // mass
+                None, // model
+            );
+        // Three kilos 2 meters away from mass1
+        let mass2 = PointMass::new_gravity(
+                Vec3::new(-1_f32,1_f32,0_f32), // pos (at earth surface)
+                Vec3::new(1000_f32,1000_f32,1000_f32), // vel
+                SimulationFloat::new(3_f64), // mass
+                None, // model
+            );
+        let potential = mass1.calculate_gravitational_potential_energy_j(vec![ &mass2]);
+        dbg!(potential.clone());
+        assert!(potential < SimulationFloat::new(-5.005e-10_f32));
+        assert!(potential > SimulationFloat::new(-5.006e-10_f32));
     }
     #[test]
     fn calc_kinetic_energy_test_zero(){
@@ -378,7 +392,7 @@ mod tests{
                 );
             mass.vel.x = x;
             mass.vel.y = y;
-            let energy = mass.calculate_total_energy_j(vec![]);
+            let energy = mass.calculate_kinetic_energy_j();
             assert!(energy > SimulationFloat::new(9.99999999_f64));
             assert!(energy < SimulationFloat::new(10.0000001_f64));
         }

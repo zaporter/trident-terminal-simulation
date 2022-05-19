@@ -12,6 +12,7 @@ use kiss3d::window::Window;
 use kiss3d::light::Light;
 
 use stopwatch::Stopwatch;
+use uuid::Uuid;
 pub mod simulation_float;
 pub mod vec3;
 pub mod pointmass;
@@ -28,7 +29,7 @@ fn main() {
         g: SimulationFloat::new(6.67408e-11_f64),
         do_visuals: true,
     };
-    //run_earth_moon_graphic();
+    // run_earth_moon_graphic();
     // run_simple_rotation();
     run_simple_rope_graphic();
 }
@@ -54,13 +55,13 @@ fn run_simple_rope_graphic() {
             SimulationFloat::new(1_f64), // mass
             Some(start_model), // model
         );
-    let end = PointMass::new(
+    let mut end = PointMass::new(
             Vec3::new(-10_f64, 6378140_f64,0_f64), // pos (at earth surface)
             Vec3::new(0_f32,0_f32,0_f32), // vel
             SimulationFloat::new(1_f64), // mass
             Some(end_model), // model
         );
-    sim.point_masses.push(start);
+    sim.point_masses.push(start.clone());
     sim.point_masses.push(end);
     sim.point_masses.push(PointMass::new_earth(Some(&mut window)));
     //sim.point_masses.push(PointMass::new_moon(Some(&mut window)));
@@ -71,20 +72,17 @@ fn run_simple_rope_graphic() {
     let simulation_jiffy_s = SimulationFloat::new(0.1_f64);
     let simulation_speed_multiplier = SimulationFloat::new(0.5_f64);
     let real_elapsed_time = Stopwatch::start_new();
-    //let mut ft = Stopwatch::start_new();
-    //let mut frame_time_box = Box::new(Stopwatch::start_new());
-    ////let frame_time = Rc::new(ft);
-    //let inner_frame_time = frame_time_box.clone();
-
 
     let criteria = move |simulation_elapsed_time_s : SimulationFloat| {
-         // (inner_frame_time.elapsed_ms() < 1000) && 
+        //(frame_time_cell.elapsed_ms() < 1000) && 
         (simulation_elapsed_time_s *
             SimulationFloat::new(1000_f32)) < simulation_speed_multiplier.clone() * SimulationFloat::new(real_elapsed_time.elapsed_ms())
         };
 
     while window.render_with_camera(&mut camera) {
-        // frame_time_box.as_mut().restart();
+        sim.point_masses[0].pos = start.pos.clone();
+        sim.point_masses[0].vel = Vec3::new(0.0,0.0,0.0);
+        // frame_time_cell.as_mut().restart();
         // dbg!(frame_time_box.elapsed_ms());
         sim.run_till(&simulation_jiffy_s, criteria.clone());
         for point in &mut sim.point_masses {
